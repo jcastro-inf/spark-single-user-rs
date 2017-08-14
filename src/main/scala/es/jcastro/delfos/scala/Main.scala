@@ -2,6 +2,7 @@ package es.jcastro.delfos.scala
 
 import java.io.File
 
+import es.jcastro.delfos.scala.evaluation.{MAE, MSE, NDCG, NDCG_overall}
 import org.apache.commons.io.FileUtils
 import org.apache.spark.mllib.recommendation.{ALS, MatrixFactorizationModel, Rating}
 import org.apache.spark.rdd.RDD
@@ -64,40 +65,36 @@ object Main {
     val usersProducts = users.cartesian(products)
       .filter(rating => !ratingsTraining_inDriver.contains((rating._1,rating._2)))
 
-//    // Evaluate the model on rating data
-//    val usersProducts = ratingsTest.map { case Rating(user, product, rate) =>
-//      (user, product)
-//    }
-
     val predictions =
       model.predict(usersProducts).map { case Rating(user, product, rate) =>
         ((user, product), rate)
       }
 
-
-    val ratingsTestTuplesAll : RDD[((Int,Int),Double)] = usersProducts.map(entry => {
-
-      val rating:Option[Rating]= ratingsTest_array
-        .find(rating=> rating.user==entry._1 && rating.product == entry._2)
-      val ratingValue = rating.map(rating=> rating.rating).getOrElse(Double.NaN)
-
-      (entry,ratingValue)
-    })
     val ratingsTestTuples: RDD[((Int,Int),Double)] = ratingsTest.map { case Rating(user, product, rate) =>
       ((user, product), rate)
     }
 
     val ratesAndPreds = ratingsTestTuples.join(predictions)
-    val predsAndRates = predictions.join(ratingsTestTuples)
 
-    val predictions_inHead:Array[((Int,Int),Double)] = predictions.collect()
-    val ratesAndPreds_inHead:Array[((Int,Int),(Double,Double))] = ratesAndPreds.collect()
 
-    val mse:Double = es.jcastro.delfos.scala.evaluation.MSE.getMeasure(ratesAndPreds)
-    val mae:Double = es.jcastro.delfos.scala.evaluation.MSE.getMeasure(ratesAndPreds)
-
+    val mse:Double = MSE.getMeasure(ratesAndPreds)
     println("Mean Squared Error = " + mse)
+    val mae:Double = MAE.getMeasure(ratesAndPreds)
     println("Mean Absolute Error = " + mae)
+
+
+    val predictionsByUser: RDD[(Int, Iterable[((Int,Int),Double)])] = predictions.groupBy(_._1._1)
+
+    val ndcg_byK = (1 to 10).foreach(k => {
+      val ndcg = NDCG.getMeasure(predictionsByUser,ratingsTest,k)
+      println("NDCG at "+k+" = "+ndcg)
+    })
+
+
+    val ndcg_overall_byK = (1 to 10).foreach(k => {
+      val ndcg = NDCG_overall.getMeasure(predictionsByUser,ratingsTest,k)
+      println("NDCG overall at "+k+" = "+ndcg)
+    })
 
     val modelName:String = filePath.replaceAll("/","-")
 
