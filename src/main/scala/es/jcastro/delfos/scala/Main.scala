@@ -2,7 +2,7 @@ package es.jcastro.delfos.scala
 
 import java.io.File
 
-import es.jcastro.delfos.scala.evaluation.{MAE, MSE, NDCG, NDCG_overall}
+import es.jcastro.delfos.scala.evaluation._
 import org.apache.commons.io.FileUtils
 import org.apache.spark.mllib.recommendation.{ALS, MatrixFactorizationModel, Rating}
 import org.apache.spark.rdd.RDD
@@ -84,17 +84,31 @@ object Main {
 
 
     val predictionsByUser: RDD[(Int, Iterable[((Int,Int),Double)])] = predictions.groupBy(_._1._1)
+    val ratingsByUser:Map[Int,Iterable[Rating]] = ratings.groupBy(_.user).collect().toMap
 
-    val ndcg_byK = (1 to 10).foreach(k => {
-      val ndcg = NDCG.getMeasure(predictionsByUser,ratingsTest,k)
+
+    val maxK:Int = 10
+
+    val ndcg_byK = (1 to maxK).foreach(k => {
+      val ndcg = NDCG.getMeasure(predictionsByUser,ratingsByUser,k)
       println("NDCG at "+k+" = "+ndcg)
     })
 
-
-    val ndcg_overall_byK = (1 to 10).foreach(k => {
-      val ndcg = NDCG_overall.getMeasure(predictionsByUser,ratingsTest,k)
+    val ndcg_overall_byK = (1 to maxK).foreach(k => {
+      val ndcg = NDCG_overall.getMeasure(predictionsByUser,ratingsByUser,k)
       println("NDCG overall at "+k+" = "+ndcg)
     })
+
+    val precision_byK = (1 to maxK).foreach(k => {
+      val ndcg = Precision.getMeasure(predictionsByUser,ratingsByUser,k)
+      println("Precision at "+k+" = "+ndcg)
+    })
+
+    val precision_overall_byK = (1 to maxK).foreach(k => {
+      val ndcg = Precision_overall.getMeasure(predictionsByUser,ratingsByUser,k)
+      println("Precision overall at "+k+" = "+ndcg)
+    })
+
 
     val modelName:String = filePath.replaceAll("/","-")
 
