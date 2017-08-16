@@ -86,29 +86,43 @@ object Main {
     val predictionsByUser: RDD[(Int, Iterable[((Int,Int),Double)])] = predictions.groupBy(_._1._1)
     val ratingsByUser:Map[Int,Iterable[Rating]] = ratings.groupBy(_.user).collect().toMap
 
+    val maxK:Int = 100
 
-    val maxK:Int = 10
+    val str:StringBuilder = new StringBuilder()
 
     val ndcg_byK = (1 to maxK).foreach(k => {
-      val ndcg = NDCG.getMeasure(predictionsByUser,ratingsByUser,k)
-      println("NDCG at "+k+" = "+ndcg)
+      val value = NDCG.getMeasure(predictionsByUser,ratingsByUser,k)
+      val msg:String = "NDCG at "+k+" = "+value;
+      println(msg)
+      str.append(msg+"\n")
     })
 
     val ndcg_overall_byK = (1 to maxK).foreach(k => {
-      val ndcg = NDCG_overall.getMeasure(predictionsByUser,ratingsByUser,k)
-      println("NDCG overall at "+k+" = "+ndcg)
+      val value = NDCG_overall.getMeasure(predictionsByUser,ratingsByUser,k)
+
+      val msg:String = "NDCG_overall at "+k+" = "+value;
+      println(msg)
+      str.append(msg+"\n")
     })
 
     val precision_byK = (1 to maxK).foreach(k => {
-      val ndcg = Precision.getMeasure(predictionsByUser,ratingsByUser,k)
-      println("Precision at "+k+" = "+ndcg)
+      val value = Precision.getMeasure(predictionsByUser,ratingsByUser,k)
+
+      val msg:String = "Precision at "+k+" = "+value;
+      println(msg)
+      str.append(msg+"\n")
     })
 
     val precision_overall_byK = (1 to maxK).foreach(k => {
-      val ndcg = Precision_overall.getMeasure(predictionsByUser,ratingsByUser,k)
-      println("Precision overall at "+k+" = "+ndcg)
+      val value = Precision_overall.getMeasure(predictionsByUser,ratingsByUser,k)
+
+      val msg:String = "Precision_overall at "+k+" = "+value;
+      println(msg)
+      str.append(msg+"\n")
     })
 
+
+    println(str.toString())
 
     val modelName:String = filePath.replaceAll("/","-")
 
