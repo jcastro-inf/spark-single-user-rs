@@ -24,14 +24,14 @@ object Main {
     val sc = new SparkContext(sparkConfiguration)
     sc.setCheckpointDir("checkpoint/")
 
-    val filePath : String = "/home/jcastro/Dropbox/Datasets-new/ml-100k/u.data"
+    val filePath : String =args(0)
 
     sc.addFile(filePath)
 
     // Load and parse the data
     val data = sc.textFile(filePath)
 
-    val ratings = data.map(_.split('\t') match { case Array(user, product, rate,timestamp) =>
+    val ratings:RDD[Rating] = data.map(_.split('\t') match { case Array(user, product, rate,timestamp) =>
       Rating(user.toInt, product.toInt, rate.toDouble)
     })
 
