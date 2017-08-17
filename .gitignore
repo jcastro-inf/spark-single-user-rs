@@ -16,3 +16,5 @@ hdfs-site.xml
 *.conf
 *.csv
 *.iml
+als-models/
+checkpoints/
