@@ -22,7 +22,13 @@ object Main {
 
     // Let's create the Spark Context using the configuration we just created
     val sc = new SparkContext(sparkConfiguration)
-    sc.setCheckpointDir("checkpoint/")
+
+    val hdfsCheckpointDir = "hdfs://192.168.10.27:8020/spark-single-user-grs/checkpoints"
+    try {
+      sc.setCheckpointDir(hdfsCheckpointDir)
+    } catch {
+      case e:Exception => sc.setCheckpointDir("checkpoint/")
+    }
 
     val filePath : String =args(0)
 
@@ -101,10 +107,21 @@ object Main {
     println("Mean Absolute Error = " + mae)
 
     println("Computing cartesian product of users x products")
-    val usersProducts:RDD[(Int,Int)] = users.cartesian(products)
-      .filter(rating => !ratingsTraining_inDriver.contains((rating._1,rating._2)))
+    val productsInDriver = products.collect().toSet
+    val ratingsTestByUser:Map[Int,Iterable[Rating]] = ratingsTest.groupBy(_.user).collect().toMap
+
+    val usersProducts:RDD[(Int,Int)] = users.flatMap(user=> {
+      val userRatings:Map[Int,Rating] = ratingsTestByUser.getOrElse(user,Iterable.empty[Rating])
+        .map(rating => (rating.product, rating))
+        .toMap
+
+      val notRated:Set[Int] = productsInDriver.filter(!userRatings.contains(_))
+
+      notRated.map((user,_))
+    })
 
     println("\tdone")
+
 
     println("Grouping predictions by user")
     val predictionsByUser: RDD[(Int, Iterable[((Int,Int),Double)])] = model
