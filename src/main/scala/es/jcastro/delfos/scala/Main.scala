@@ -57,13 +57,13 @@ object Main {
     val ratingsTraining:RDD[Rating] = ratingsWithRandom.filter(entry => {
       val training:Boolean = entry._2 <= trainingRatio
       training
-    }).map(_._1)
+    }).map(_._1).cache()
     println("\ttrain: "+ratingsTraining.count())
 
     val ratingsTest:RDD[Rating] = ratingsWithRandom.filter(entry => {
       val training:Boolean = entry._2 > trainingRatio
       training
-    }).map(_._1)
+    }).map(_._1).cache()
     println("\ttest: "+ratingsTest.count())
 
     println("Building ALS model ")
@@ -95,7 +95,7 @@ object Main {
       ((user, product), rate)
     }
 
-    val ratesAndPreds = ratingsTestTuples.join(predictions)
+    val ratesAndPreds = ratingsTestTuples.join(predictions).cache()
 
     val mse:Double = MSE.getMeasure(ratesAndPreds)
     println("Mean Squared Error = " + mse)
@@ -104,7 +104,9 @@ object Main {
 
 
     println("Grouping predictions by user")
-    val predictionsByUser: RDD[(Int, Iterable[((Int,Int),Double)])] = predictions.groupBy(_._1._1)
+    val predictionsByUser: RDD[(Int, Iterable[((Int,Int),Double)])] = predictions
+      .groupBy(_._1._1).cache()
+
     println("\tdone")
 
     println("Grouping ratings by user to speed up measures calculation")

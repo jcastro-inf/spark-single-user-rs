@@ -14,7 +14,7 @@ object NDCG_overall {
 
   def getMeasure( predictionsByUser : RDD[(Int, Iterable[((Int,Int),Double)])], ratingsByUser:Map[Int,Iterable[Rating]], k:Int):Double ={
 
-    val ndcg_byUser:Seq[(Int, Double)] = predictionsByUser.map(userPredictions => {
+    val ndcg_byUser:RDD[(Int, Double)] = predictionsByUser.map(userPredictions => {
 
       val user = userPredictions._1
 
@@ -58,14 +58,14 @@ object NDCG_overall {
 
         (user, ndcg)
       }
-    }).collect().toSeq
+    })
 
-    val ndcg_byUser_noNaNs:Seq[Double] = ndcg_byUser.map(_._2)
+    val ndcg_byUser_noNaNs:RDD[Double] = ndcg_byUser.map(_._2)
       .filter(!Double.NaN.equals(_))
 
     val ndcg_sum:Double = ndcg_byUser_noNaNs.sum
 
-    val ndcg:Double = ndcg_sum/ndcg_byUser.length
+    val ndcg:Double = ndcg_sum/ndcg_byUser.count()
 
     ndcg
   }
