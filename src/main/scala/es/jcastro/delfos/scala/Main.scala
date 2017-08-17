@@ -1,14 +1,14 @@
 package es.jcastro.delfos.scala
 
 import java.io.File
+import java.util.Random
 
+import es.jcastro.delfos.scala.common.Chronometer
 import es.jcastro.delfos.scala.evaluation._
 import org.apache.commons.io.FileUtils
 import org.apache.spark.mllib.recommendation.{ALS, MatrixFactorizationModel, Rating}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
-
-import scala.util.Random
 
 /**
   * Created by jcastro on 10/08/2017.
@@ -35,47 +35,67 @@ object Main {
       Rating(user.toInt, product.toInt, rate.toDouble)
     })
 
+    println("Dataset has '"+ratings.count()+"' ratings")
+
     // Build the recommendation model using ALS
     val rank = 20
     val numIterations = 100
 
-    val random = new Random(0)
 
-    val ratingsWithRandom:Array[(Rating,Double)] = ratings.collect()
-      .map(rating => (rating, random.nextDouble()))
+    val seed:Long = 0l
 
-    val ratingsTraining_array = ratingsWithRandom.filter(entry => {
-      val training:Boolean = entry._2 <= 0.8
+    val ratingsWithRandom:RDD[(Rating,Double)] = ratings
+      .map(rating => {
+        val thisRatingSeed = rating.hashCode()+seed
+        val random = new Random(thisRatingSeed)
+        val randomValue:Double =random.nextDouble()
+        (rating, randomValue)
+      })
+
+    val trainingRatio :Double= 0.8
+
+    val ratingsTraining:RDD[Rating] = ratingsWithRandom.filter(entry => {
+      val training:Boolean = entry._2 <= trainingRatio
       training
-    }).map(_._1).toSeq
-    val ratingsTest_array = ratingsWithRandom.filter(entry => {
-      val training:Boolean = entry._2 > 0.8
+    }).map(_._1)
+    println("\ttrain: "+ratingsTraining.count())
+
+    val ratingsTest:RDD[Rating] = ratingsWithRandom.filter(entry => {
+      val training:Boolean = entry._2 > trainingRatio
       training
-    }).map(_._1).toSeq
+    }).map(_._1)
+    println("\ttest: "+ratingsTest.count())
 
-    val ratingsTraining:RDD[Rating] = sc.parallelize(ratingsTraining_array)
-    val ratingsTest:RDD[Rating] = sc.parallelize(ratingsTest_array)
-
+    println("Building ALS model ")
+    val chronometer = new Chronometer
     val model = ALS.train(ratingsTraining, rank, numIterations, 0.01)
+    println("\tdone in "+chronometer.printTotalElapsed)
 
-    val users = ratings.map(_.user).distinct()
-    val products = ratings.map(_.product).distinct()
+    val users:RDD[Int] = ratings.map(_.user).distinct()
+    val products:RDD[Int] = ratings.map(_.product).distinct()
+
+    println("#users:    "+users.count())
+    println("#products: "+products.count())
 
     val ratingsTraining_inDriver:Set[(Int,Int)] = ratingsTraining.map(rating => (rating.user,rating.product)).collect().toSet
-    val usersProducts = users.cartesian(products)
-      .filter(rating => !ratingsTraining_inDriver.contains((rating._1,rating._2)))
+    println("#ratings:  "+ratingsTraining_inDriver.size)
 
-    val predictions =
+    println("Computing cartesian product of users x products")
+    val usersProducts:RDD[(Int,Int)] = users.cartesian(products)
+      .filter(rating => !ratingsTraining_inDriver.contains((rating._1,rating._2)))
+    println("\tdone")
+
+    val predictions:RDD[((Int,Int),Double)] =
       model.predict(usersProducts).map { case Rating(user, product, rate) =>
         ((user, product), rate)
       }
 
-    val ratingsTestTuples: RDD[((Int,Int),Double)] = ratingsTest.map { case Rating(user, product, rate) =>
+    val ratingsTestTuples: RDD[((Int,Int),Double)] = ratingsTest
+      .map { case Rating(user, product, rate) =>
       ((user, product), rate)
     }
 
     val ratesAndPreds = ratingsTestTuples.join(predictions)
-
 
     val mse:Double = MSE.getMeasure(ratesAndPreds)
     println("Mean Squared Error = " + mse)
@@ -83,8 +103,13 @@ object Main {
     println("Mean Absolute Error = " + mae)
 
 
+    println("Grouping predictions by user")
     val predictionsByUser: RDD[(Int, Iterable[((Int,Int),Double)])] = predictions.groupBy(_._1._1)
+    println("\tdone")
+
+    println("Grouping ratings by user to speed up measures calculation")
     val ratingsByUser:Map[Int,Iterable[Rating]] = ratings.groupBy(_.user).collect().toMap
+    println("\tdone")
 
     val maxK:Int = 100
 
