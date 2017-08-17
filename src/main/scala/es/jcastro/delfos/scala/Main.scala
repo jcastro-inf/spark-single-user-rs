@@ -80,33 +80,39 @@ object Main {
     val ratingsTraining_inDriver:Set[(Int,Int)] = ratingsTraining.map(rating => (rating.user,rating.product)).collect().toSet
     println("#ratings:  "+ratingsTraining_inDriver.size)
 
-    println("Computing cartesian product of users x products")
-    val usersProducts:RDD[(Int,Int)] = users.cartesian(products)
-      .filter(rating => !ratingsTraining_inDriver.contains((rating._1,rating._2)))
-    println("\tdone")
 
-    val predictions:RDD[((Int,Int),Double)] =
-      model.predict(usersProducts).map { case Rating(user, product, rate) =>
+    val usersProductsReduced:RDD[(Int,Int)] = ratingsTest.map(r=> (r.user,r.product)).cache()
+    val predictionsReduced:RDD[((Int,Int),Double)] =
+      model.predict(usersProductsReduced).map { case Rating(user, product, rate) =>
         ((user, product), rate)
-      }
+      }.cache()
+
 
     val ratingsTestTuples: RDD[((Int,Int),Double)] = ratingsTest
       .map { case Rating(user, product, rate) =>
       ((user, product), rate)
     }
 
-    val ratesAndPreds = ratingsTestTuples.join(predictions).cache()
+    val ratesAndPreds = ratingsTestTuples.join(predictionsReduced).cache()
 
     val mse:Double = MSE.getMeasure(ratesAndPreds)
     println("Mean Squared Error = " + mse)
     val mae:Double = MAE.getMeasure(ratesAndPreds)
     println("Mean Absolute Error = " + mae)
 
+    println("Computing cartesian product of users x products")
+    val usersProducts:RDD[(Int,Int)] = users.cartesian(products)
+      .filter(rating => !ratingsTraining_inDriver.contains((rating._1,rating._2)))
+
+    println("\tdone")
 
     println("Grouping predictions by user")
-    val predictionsByUser: RDD[(Int, Iterable[((Int,Int),Double)])] = predictions
+    val predictionsByUser: RDD[(Int, Iterable[((Int,Int),Double)])] = model
+      .predict(usersProducts)
+      .map { case Rating(user, product, rate) =>
+        ((user, product), rate)
+      }
       .groupBy(_._1._1).cache()
-
     println("\tdone")
 
     println("Grouping ratings by user to speed up measures calculation")
