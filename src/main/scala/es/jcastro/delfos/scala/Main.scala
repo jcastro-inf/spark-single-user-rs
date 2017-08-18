@@ -25,14 +25,12 @@ object Main {
     // Let's create the Spark Context using the configuration we just created
     val sc = new SparkContext(sparkConfiguration)
 
-    /*val hdfsCheckpointDir = "hdfs://192.168.10.27:8020/spark-single-user-grs/checkpoints"
+    val hdfsCheckpointDir = "hdfs://192.168.10.27:8020/spark-single-user-grs/checkpoints"
     try {
       sc.setCheckpointDir(hdfsCheckpointDir)
     } catch {
       case e:Exception => sc.setCheckpointDir("checkpoint/")
-    }*/
-
-    sc.setCheckpointDir("checkpoint/")
+    }
 
     val filePath : String =args(0)
 
