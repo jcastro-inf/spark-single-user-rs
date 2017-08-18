@@ -23,12 +23,14 @@ object Main {
     // Let's create the Spark Context using the configuration we just created
     val sc = new SparkContext(sparkConfiguration)
 
-    val hdfsCheckpointDir = "hdfs://192.168.10.27:8020/spark-single-user-grs/checkpoints"
+    /*val hdfsCheckpointDir = "hdfs://192.168.10.27:8020/spark-single-user-grs/checkpoints"
     try {
       sc.setCheckpointDir(hdfsCheckpointDir)
     } catch {
       case e:Exception => sc.setCheckpointDir("checkpoint/")
-    }
+    }*/
+
+    sc.setCheckpointDir("checkpoint/")
 
     val filePath : String =args(0)
 
@@ -74,7 +76,7 @@ object Main {
 
     println("Building ALS model ")
     val chronometer = new Chronometer
-    val model = ALS.train(ratingsTraining, rank, numIterations, 0.01)
+    val model:MatrixFactorizationModel = ALS.train(ratingsTraining, rank, numIterations, 0.01)
     println("\tdone in "+chronometer.printTotalElapsed)
 
     val users:RDD[Int] = ratings.map(_.user).distinct()
@@ -85,7 +87,6 @@ object Main {
 
     val ratingsTraining_inDriver:Set[(Int,Int)] = ratingsTraining.map(rating => (rating.user,rating.product)).collect().toSet
     println("#ratings:  "+ratingsTraining_inDriver.size)
-
 
     val usersProductsReduced:RDD[(Int,Int)] = ratingsTest.map(r=> (r.user,r.product)).cache()
     val predictionsReduced:RDD[((Int,Int),Double)] =
@@ -99,81 +100,64 @@ object Main {
       ((user, product), rate)
     }
 
-    val ratesAndPreds = ratingsTestTuples.join(predictionsReduced).cache()
+    val ratesAndPreds:RDD[((Int,Int),(Double,Double))] = ratingsTestTuples.join(predictionsReduced).cache()
 
     val mse:Double = MSE.getMeasure(ratesAndPreds)
     println("Mean Squared Error = " + mse)
     val mae:Double = MAE.getMeasure(ratesAndPreds)
     println("Mean Absolute Error = " + mae)
 
-    println("Computing cartesian product of users x products")
-    val productsInDriver = products.collect().toSet
-    val ratingsTestByUser:Map[Int,Iterable[Rating]] = ratingsTest.groupBy(_.user).collect().toMap
-
-    val usersProducts:RDD[(Int,Int)] = users.flatMap(user=> {
-      val userRatings:Map[Int,Rating] = ratingsTestByUser.getOrElse(user,Iterable.empty[Rating])
-        .map(rating => (rating.product, rating))
-        .toMap
-
-      val notRated:Set[Int] = productsInDriver.filter(!userRatings.contains(_))
-
-      notRated.map((user,_))
-    })
-
-    println("\tdone")
-
-
-    println("Grouping predictions by user")
-    val predictionsByUser: RDD[(Int, Iterable[((Int,Int),Double)])] = model
-      .predict(usersProducts)
-      .map { case Rating(user, product, rate) =>
-        ((user, product), rate)
-      }
-      .groupBy(_._1._1).cache()
-    println("\tdone")
-
     println("Grouping ratings by user to speed up measures calculation")
     val ratingsByUser:Map[Int,Iterable[Rating]] = ratings.groupBy(_.user).collect().toMap
     println("\tdone")
 
-    val maxK:Int = 100
+    println("Computing NDCG with separate user computation")
+    val model_my:MatrixFactorizationModel_my = new MatrixFactorizationModel_my(
+      model.userFeatures.collect().toMap,
+      model.productFeatures.collect().toMap
+    )
+
+    val maxK:Int = 1
+    val minK:Int = 100
 
     val str:StringBuilder = new StringBuilder()
 
-    val ndcg_byK = (1 to maxK).foreach(k => {
-      val value = NDCG.getMeasure(predictionsByUser,ratingsByUser,k)
-      val msg:String = "NDCG at "+k+" = "+value;
-      println(msg)
-      str.append(msg+"\n")
-    })
-
-    val ndcg_overall_byK = (1 to maxK).foreach(k => {
-      val value = NDCG_overall.getMeasure(predictionsByUser,ratingsByUser,k)
+    val ndcg_overall_byK = (minK to maxK).foreach(k => {
+      val value = NDCG_overall.getMeasure(ratesAndPreds,k)
 
       val msg:String = "NDCG_overall at "+k+" = "+value;
       println(msg)
       str.append(msg+"\n")
     })
 
-    val precision_byK = (1 to maxK).foreach(k => {
-      val value = Precision.getMeasure(predictionsByUser,ratingsByUser,k)
+    val precision_overall_byK = (minK to maxK).foreach(k => {
+      val value = Precision_overall.getMeasure(ratesAndPreds,k)
+
+      val msg:String = "Precision_overall at "+k+" = "+value;
+      println(msg)
+      str.append(msg+"\n")
+    })
+    val ndcg_byK = (minK to maxK).foreach(k => {
+      val value = NDCG.getMeasure(ratingsTraining,ratingsTest,model_my,k)
+      val msg:String = "NDCG at "+k+" = "+value;
+      println(msg)
+      str.append(msg+"\n")
+    })
+
+    val precision_byK = (minK to maxK).foreach(k => {
+      val value = Precision.getMeasure(ratingsTraining,ratingsTest,model_my,k)
 
       val msg:String = "Precision at "+k+" = "+value;
       println(msg)
       str.append(msg+"\n")
     })
 
-    val precision_overall_byK = (1 to maxK).foreach(k => {
-      val value = Precision_overall.getMeasure(predictionsByUser,ratingsByUser,k)
-
-      val msg:String = "Precision_overall at "+k+" = "+value;
-      println(msg)
-      str.append(msg+"\n")
-    })
-
-
     println(str.toString())
 
+    saveModel(filePath,sc,model)
+  }
+
+  def saveModel(filePath:String, sc:SparkContext, model:MatrixFactorizationModel) ={
     val modelName:String = filePath.replaceAll("/","-")
 
     val modelPath: String = "als-models/" ++ modelName

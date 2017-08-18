@@ -1,9 +1,66 @@
 package es.jcastro.delfos.scala.evaluation
 
+import es.jcastro.delfos.scala.MatrixFactorizationModel_my
 import org.apache.spark.mllib.recommendation.Rating
 import org.apache.spark.rdd.RDD
 
 object Precision {
+
+
+  def getMeasure(ratingsTrain:RDD[Rating],ratingsTest:RDD[Rating],model:MatrixFactorizationModel_my, k:Int) :Double={
+
+    val products:Set[Int] = model.productsFeatures.keySet
+
+    val ratingsTrainByUser:Map[Int, Iterable[Rating]] = ratingsTrain.groupBy(_.user).collect().toMap
+    val ratingsTestByUser:Map[Int, Iterable[Rating]] = ratingsTest.groupBy(_.user).collect().toMap
+
+    val precision_byUser:Map[Int,Double] = ratingsTest.groupBy(_.user).map(entry=>{
+      val user:Int = entry._1
+      val userTestRatings:Map[Int,Rating] = entry._2
+        .map(rating => (rating.product,rating))
+        .toMap
+
+      val userTrainRatings:Map[Int,Rating] = ratingsTrainByUser
+        .getOrElse(user,Iterable.empty[Rating])
+        .map(rating => (rating.product,rating))
+        .toMap
+
+      val itemsRated:Set[Int] = userTrainRatings.keySet
+      val notRated: Set[Int] = products.filter(!itemsRated.contains(_))
+
+      if(userTestRatings.isEmpty)
+        (user,Double.NaN)
+
+      val userPredictionsWithRating: Seq[(Int, Double, Double)] =notRated.toSeq
+        .map(product => {
+
+          val prediction:Double  = model.predict(user,product).getOrElse(0.0)
+          val rating: Double = userTestRatings.get(product).map(_.rating).getOrElse(0.0)
+
+          (product,prediction,rating)
+        })
+
+      val byPrediction: Ordering[(Int, Double, Double)] = Ordering.by(_._2)
+
+      val bestByPrediction: Seq[(Int, Double, Double)] = userPredictionsWithRating
+        .sorted(byPrediction).reverse
+        .slice(0, k)
+
+      val userPredictions_actual: Seq[Double] = bestByPrediction.map(_._3)
+
+      val precision = precisionAtK(userPredictions_actual, k)
+
+      (user, precision)
+    })
+      .filter(entry => {!Double.NaN.equals(entry._2)})
+      .collect().toMap
+
+    val size:Double = precision_byUser.size
+
+    val precision:Double = precision_byUser.map(_._2).map(_/size).sum
+
+    precision
+  }
 
   def getMeasure( predictions : RDD[((Int, Int), (Double))], ratings : RDD[Rating], k:Int):Double = {
     val ratingsByUser:Map[Int,Iterable[Rating]] = ratings.groupBy(_.user).collect().toMap

@@ -1,15 +1,73 @@
 package es.jcastro.delfos.scala.evaluation
 
+import es.jcastro.delfos.scala.MatrixFactorizationModel_my
 import org.apache.spark.mllib.recommendation.Rating
 import org.apache.spark.rdd.RDD
 
 object NDCG {
 
-  def getMeasure( predictions : RDD[((Int, Int), (Double))], ratings : RDD[Rating], k:Int):Double = {
-    val ratingsByUser:Map[Int,Iterable[Rating]] = ratings.groupBy(_.user).collect().toMap
-    val predictionsByUser: RDD[(Int, Iterable[((Int,Int),Double)])] = predictions.groupBy(_._1._1)
+  def getMeasure(ratingsTrain:RDD[Rating],ratingsTest:RDD[Rating],model:MatrixFactorizationModel_my, k:Int) :Double={
 
-    getMeasure(predictionsByUser,ratingsByUser,k)
+    val products:Set[Int] = model.productsFeatures.keySet
+
+    val ratingsTrainByUser:Map[Int, Iterable[Rating]] = ratingsTrain.groupBy(_.user).collect().toMap
+    val ratingsTestByUser:Map[Int, Iterable[Rating]] = ratingsTest.groupBy(_.user).collect().toMap
+
+    val ndcg_byUser:Map[Int,Double] = ratingsTest.groupBy(_.user).map(entry=>{
+      val user:Int = entry._1
+      val userTestRatings:Map[Int,Rating] = entry._2
+        .map(rating => (rating.product,rating))
+        .toMap
+
+      val userTrainRatings:Map[Int,Rating] = ratingsTrainByUser
+        .getOrElse(user,Iterable.empty[Rating])
+        .map(rating => (rating.product,rating))
+        .toMap
+
+      val itemsRated:Set[Int] = userTrainRatings.keySet
+      val notRated: Set[Int] = products.filter(!itemsRated.contains(_))
+
+      if(userTestRatings.isEmpty)
+        (user,Double.NaN)
+
+      val userPredictionsWithRating: Seq[(Int, Double, Double)] =notRated.toSeq
+        .map(product => {
+
+          val prediction:Double  = model.predict(user,product).getOrElse(0.0)
+          val rating: Double = userTestRatings.get(product).map(_.rating).getOrElse(0.0)
+
+          (product,prediction,rating)
+        })
+
+        val byRating: Ordering[(Int, Double, Double)] = Ordering.by(_._3)
+        val byPrediction: Ordering[(Int, Double, Double)] = Ordering.by(_._2)
+
+        val bestByPrediction: Seq[(Int, Double, Double)] = userPredictionsWithRating
+          .sorted(byPrediction).reverse
+          .slice(0, k)
+
+        val bestByRating: Seq[(Int, Double, Double)] = userPredictionsWithRating
+          .sorted(byRating).reverse
+          .slice(0, k)
+
+        val userPredictions_actual: Seq[Double] = bestByPrediction.map(_._3)
+        val userPredictions_perfect: Seq[Double] = bestByRating.map(_._3)
+
+        val dcg_actual = dcgAtK(userPredictions_actual, k)
+        val dcg_perfect = dcgAtK(userPredictions_perfect, k)
+
+        val ndcg = dcg_actual / dcg_perfect
+
+        (user, ndcg)
+    })
+      .filter(entry => {!Double.NaN.equals(entry._2)})
+      .collect().toMap
+
+    val size:Double = ndcg_byUser.size
+
+    val ndcg:Double = ndcg_byUser.map(_._2).map(_/size).sum
+
+    ndcg
   }
 
   def getMeasure( predictionsByUser : RDD[(Int, Iterable[((Int,Int),Double)])], ratingsByUser:Map[Int,Iterable[Rating]], k:Int):Double ={
