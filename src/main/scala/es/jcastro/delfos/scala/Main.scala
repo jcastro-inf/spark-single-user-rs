@@ -117,8 +117,8 @@ object Main {
       model.productFeatures.collect().toMap
     )
 
-    val maxK:Int = 1
-    val minK:Int = 100
+    val minK:Int = 1
+    val maxK:Int = 100
 
     val str:StringBuilder = new StringBuilder()
 
