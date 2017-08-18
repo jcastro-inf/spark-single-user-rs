@@ -19,8 +19,8 @@ object Main {
 
   def main(args: Array[String]) {
 
-    val sparkConfiguration = new SparkConf().
-      setAppName("spark-single-user-rs")
+    val sparkConfiguration = new SparkConf()
+      .setAppName("spark-single-user-rs")
 
     // Let's create the Spark Context using the configuration we just created
     val sc = new SparkContext(sparkConfiguration)
@@ -34,9 +34,7 @@ object Main {
 
     sc.setCheckpointDir("checkpoint/")
 
-    //val filePath : String =args(0)
-
-    val filePath : String = "/home/jcastro/Dropbox/Datasets-new/ml-20m/ml-20m-ratings.tsv"
+    val filePath : String =args(0)
 
     sc.addFile(filePath)
 
@@ -111,10 +109,6 @@ object Main {
     val mae:Double = MAE.getMeasure(ratesAndPreds)
     println("Mean Absolute Error = " + mae)
 
-    println("Grouping ratings by user to speed up measures calculation")
-    val ratingsByUser:Map[Int,Iterable[Rating]] = ratings.groupBy(_.user).collect().toMap
-    println("\tdone")
-
     println("Computing NDCG with separate user computation")
     val model_my:MatrixFactorizationModel_my = new MatrixFactorizationModel_my(
       model.userFeatures.collect().toMap,
@@ -126,32 +120,33 @@ object Main {
 
     val str:StringBuilder = new StringBuilder()
 
-    val ndcg_overall_byK = (minK to maxK).foreach(k => {
+    (minK to maxK).foreach(k => {
       val value = NDCG_inTest.getMeasure(ratesAndPreds,k)
 
-      val msg:String = "NDCG_inTest at "+k+" = "+value;
+      val msg:String = "NDCG_inTest at "+k+" = "+value
       println(msg)
       str.append(msg+"\n")
     })
 
-    val precision_overall_byK = (minK to maxK).foreach(k => {
+    (minK to maxK).foreach(k => {
       val value = Precision_inTest.getMeasure(ratesAndPreds,k)
 
-      val msg:String = "Precision_inTest at "+k+" = "+value;
-      println(msg)
-      str.append(msg+"\n")
-    })
-    val ndcg_byK = (minK to maxK).foreach(k => {
-      val value = NDCG_overall.getMeasure(ratingsTraining,ratingsTest,model_my,k)
-      val msg:String = "NDCG_overall at "+k+" = "+value;
+      val msg:String = "Precision_inTest at "+k+" = "+value
       println(msg)
       str.append(msg+"\n")
     })
 
-    val precision_byK = (minK to maxK).foreach(k => {
+    (minK to maxK).foreach(k => {
+      val value = NDCG_overall.getMeasure(ratingsTraining,ratingsTest,model_my,k)
+      val msg:String = "NDCG_overall at "+k+" = "+value
+      println(msg)
+      str.append(msg+"\n")
+    })
+
+    (minK to maxK).foreach(k => {
       val value = Precision_overall.getMeasure(ratingsTraining,ratingsTest,model_my,k)
 
-      val msg:String = "Precision_overall at "+k+" = "+value;
+      val msg:String = "Precision_overall at "+k+" = "+value
       println(msg)
       str.append(msg+"\n")
     })
