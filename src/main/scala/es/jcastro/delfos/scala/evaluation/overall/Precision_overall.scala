@@ -1,18 +1,16 @@
-package es.jcastro.delfos.scala.evaluation
+package es.jcastro.delfos.scala.evaluation.overall
 
 import es.jcastro.delfos.scala.MatrixFactorizationModel_my
 import org.apache.spark.mllib.recommendation.Rating
 import org.apache.spark.rdd.RDD
 
-object Precision {
-
+object Precision_overall {
 
   def getMeasure(ratingsTrain:RDD[Rating],ratingsTest:RDD[Rating],model:MatrixFactorizationModel_my, k:Int) :Double={
 
     val products:Set[Int] = model.productsFeatures.keySet
 
     val ratingsTrainByUser:Map[Int, Iterable[Rating]] = ratingsTrain.groupBy(_.user).collect().toMap
-    val ratingsTestByUser:Map[Int, Iterable[Rating]] = ratingsTest.groupBy(_.user).collect().toMap
 
     val precision_byUser:Map[Int,Double] = ratingsTest.groupBy(_.user).map(entry=>{
       val user:Int = entry._1
@@ -85,7 +83,6 @@ object Precision {
       else {
         val userPredictionsWithRating: Seq[(Int, Double, Double)] = userPredictions._2
           .filter(_._1._1 == user)
-          .filter(entry => userRatings.contains(entry._1._2))
           .map(entry => {
 
             val product: Int = entry._1._2

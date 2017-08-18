@@ -5,6 +5,8 @@ import java.util.Random
 
 import es.jcastro.delfos.scala.common.Chronometer
 import es.jcastro.delfos.scala.evaluation._
+import es.jcastro.delfos.scala.evaluation.intest.{NDCG_inTest, Precision_inTest}
+import es.jcastro.delfos.scala.evaluation.overall.{NDCG_overall, Precision_overall}
 import org.apache.commons.io.FileUtils
 import org.apache.spark.mllib.recommendation.{ALS, MatrixFactorizationModel, Rating}
 import org.apache.spark.rdd.RDD
@@ -32,7 +34,9 @@ object Main {
 
     sc.setCheckpointDir("checkpoint/")
 
-    val filePath : String =args(0)
+    //val filePath : String =args(0)
+
+    val filePath : String = "/home/jcastro/Dropbox/Datasets-new/ml-20m/ml-20m-ratings.tsv"
 
     sc.addFile(filePath)
 
@@ -123,31 +127,31 @@ object Main {
     val str:StringBuilder = new StringBuilder()
 
     val ndcg_overall_byK = (minK to maxK).foreach(k => {
-      val value = NDCG_overall.getMeasure(ratesAndPreds,k)
+      val value = NDCG_inTest.getMeasure(ratesAndPreds,k)
 
-      val msg:String = "NDCG_overall at "+k+" = "+value;
+      val msg:String = "NDCG_inTest at "+k+" = "+value;
       println(msg)
       str.append(msg+"\n")
     })
 
     val precision_overall_byK = (minK to maxK).foreach(k => {
-      val value = Precision_overall.getMeasure(ratesAndPreds,k)
+      val value = Precision_inTest.getMeasure(ratesAndPreds,k)
 
-      val msg:String = "Precision_overall at "+k+" = "+value;
+      val msg:String = "Precision_inTest at "+k+" = "+value;
       println(msg)
       str.append(msg+"\n")
     })
     val ndcg_byK = (minK to maxK).foreach(k => {
-      val value = NDCG.getMeasure(ratingsTraining,ratingsTest,model_my,k)
-      val msg:String = "NDCG at "+k+" = "+value;
+      val value = NDCG_overall.getMeasure(ratingsTraining,ratingsTest,model_my,k)
+      val msg:String = "NDCG_overall at "+k+" = "+value;
       println(msg)
       str.append(msg+"\n")
     })
 
     val precision_byK = (minK to maxK).foreach(k => {
-      val value = Precision.getMeasure(ratingsTraining,ratingsTest,model_my,k)
+      val value = Precision_overall.getMeasure(ratingsTraining,ratingsTest,model_my,k)
 
-      val msg:String = "Precision at "+k+" = "+value;
+      val msg:String = "Precision_overall at "+k+" = "+value;
       println(msg)
       str.append(msg+"\n")
     })
