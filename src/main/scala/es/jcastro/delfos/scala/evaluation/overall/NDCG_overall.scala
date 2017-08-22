@@ -1,6 +1,7 @@
 package es.jcastro.delfos.scala.evaluation.overall
 
 import es.jcastro.delfos.scala.MatrixFactorizationModel_my
+import es.jcastro.delfos.scala.common.Chronometer
 import org.apache.spark.mllib.recommendation.Rating
 import org.apache.spark.rdd.RDD
 
@@ -8,11 +9,25 @@ object NDCG_overall {
 
   def getMeasure(ratingsTrain:RDD[Rating],ratingsTest:RDD[Rating],model:MatrixFactorizationModel_my, k:Int) :Double={
 
+    val chronometer = new Chronometer
+
     val products:Set[Int] = model.productsFeatures.keySet
+
+    println(chronometer.printPartialElapsed+"\tproducts keyset")
+    chronometer.reset()
 
     val ratingsTrainByUser:Map[Int, Iterable[Rating]] = ratingsTrain.groupBy(_.user).collect().toMap
 
-    val ndcg_byUser:Map[Int,Double] = ratingsTest.groupBy(_.user).map(entry=>{
+    println(chronometer.printPartialElapsed+"\tratings train by user")
+    chronometer.reset()
+
+    val ratingsTestByUser = ratingsTest.groupBy(_.user)
+    println(chronometer.printPartialElapsed+"\tratings test by user")
+    chronometer.reset()
+
+    val ndcg_byUser:RDD[(Int,Double,Long)] = ratingsTestByUser.map(entry=>{
+      val chronometerPerUser = new Chronometer
+
       val user:Int = entry._1
       val userTestRatings:Map[Int,Rating] = entry._2
         .map(rating => (rating.product,rating))
@@ -57,14 +72,29 @@ object NDCG_overall {
 
       val ndcg = dcg_actual / dcg_perfect
 
-      (user, ndcg)
+      (user, ndcg,chronometerPerUser.getTotalElapsed)
+
+
     })
       .filter(entry => {!Double.NaN.equals(entry._2)})
-      .collect().toMap
 
-    val size:Double = ndcg_byUser.size
+    println(chronometer.printPartialElapsed+"\tndcg by user")
+    chronometer.reset()
+
+    val size:Double = ndcg_byUser.count
+
+    println(chronometer.printPartialElapsed+"\tndcg size")
+    chronometer.reset()
+
+    val meanTimePerUser = ndcg_byUser.map(_._3).map(v => v/size).sum
+
+    println(chronometer.printPartialElapsed+"\tmean time per user")
+    chronometer.reset()
 
     val ndcg:Double = ndcg_byUser.map(_._2).map(_/size).sum
+
+    println(chronometer.printPartialElapsed+"\tndcg final")
+    chronometer.reset()
 
     ndcg
   }
