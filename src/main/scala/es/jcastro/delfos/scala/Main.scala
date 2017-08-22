@@ -1,6 +1,7 @@
 package es.jcastro.delfos.scala
 
 import java.io.File
+import java.lang.management.ManagementFactory
 import java.util.Random
 
 import es.jcastro.delfos.scala.common.Chronometer
@@ -26,12 +27,15 @@ object Main {
     // Let's create the Spark Context using the configuration we just created
     val sc = new SparkContext(sparkConfiguration)
 
+
     val hdfsCheckpointDir = "hdfs://192.168.10.27:8020/spark-single-user-grs/checkpoints"
-    try {
-      sc.setCheckpointDir(hdfsCheckpointDir)
-    } catch {
-      case e:Exception => sc.setCheckpointDir("checkpoint/")
-    }
+    val localCheckpointDir = "./checkpoint/"
+
+    var checkpointDir = if (isMachine("corbeta-jcastro-debian"))
+      localCheckpointDir
+      else hdfsCheckpointDir
+
+    sc.setCheckpointDir(checkpointDir)
 
     val filePath : String =args(0)
 
@@ -49,7 +53,6 @@ object Main {
     // Build the recommendation model using ALS
     val rank = 20
     val numIterations = 100
-
 
     val seed:Long = 0l
 
@@ -94,7 +97,6 @@ object Main {
       model.predict(usersProductsReduced).map { case Rating(user, product, rate) =>
         ((user, product), rate)
       }.cache()
-
 
     val ratingsTestTuples: RDD[((Int,Int),Double)] = ratingsTest
       .map { case Rating(user, product, rate) =>
@@ -169,5 +171,16 @@ object Main {
 
     model.save(sc,modelPath)
     val sameModel = MatrixFactorizationModel.load(sc, modelPath)
+  }
+
+  def isMachine(str: String):Boolean     ={
+    val names = ManagementFactory.getRuntimeMXBean().getName().split('@')
+
+    val process = names(0)
+    val machine = names(1)
+
+    val isMachine = machine.equals(str)
+
+    isMachine
   }
 }
