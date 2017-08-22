@@ -25,7 +25,7 @@ object NDCG_overall {
     println(chronometer.printPartialElapsed+"\tratings test by user")
     chronometer.reset()
 
-    val ndcg_byUser:RDD[(Int,Double,Long)] = ratingsTestByUser.map(entry=>{
+    val ndcg_byUser:Array[(Int,Double,Long)] = ratingsTestByUser.map(entry=>{
       val chronometerPerUser = new Chronometer
 
       val user:Int = entry._1
@@ -77,11 +77,12 @@ object NDCG_overall {
 
     })
       .filter(entry => {!Double.NaN.equals(entry._2)})
+      .collect()
 
     println(chronometer.printPartialElapsed+"\tndcg by user")
     chronometer.reset()
 
-    val size:Double = ndcg_byUser.count
+    val size:Double = ndcg_byUser.size
 
     println(chronometer.printPartialElapsed+"\tndcg size")
     chronometer.reset()
