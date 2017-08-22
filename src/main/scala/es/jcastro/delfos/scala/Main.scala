@@ -18,6 +18,7 @@ import org.apache.spark.{SparkConf, SparkContext}
 object Main {
 
   def main(args: Array[String]) {
+    println("Executing spark-single-user-rs")
 
     val sparkConfiguration = new SparkConf()
       .setAppName("spark-single-user-rs")
@@ -134,24 +135,28 @@ object Main {
       str.append(msg+"\n")
     })
 
-    (minK to maxK).foreach(k => {
-      val value = NDCG_overall.getMeasure(ratingsTraining,ratingsTest,model_my,k)
-      val msg:String = "NDCG_overall at "+k+" = "+value
-      println(msg)
-      str.append(msg+"\n")
-    })
-
-    (minK to maxK).foreach(k => {
-      val value = Precision_overall.getMeasure(ratingsTraining,ratingsTest,model_my,k)
-
-      val msg:String = "Precision_overall at "+k+" = "+value
-      println(msg)
-      str.append(msg+"\n")
-    })
+    computeMeasuresOnAllProducts(ratingsTraining, ratingsTest, model_my, minK, maxK,str)
 
     println(str.toString())
 
     saveModel(filePath,sc,model)
+  }
+
+  private def computeMeasuresOnAllProducts(ratingsTraining: RDD[Rating], ratingsTest: RDD[Rating], model_my: MatrixFactorizationModel_my, minK: Int, maxK: Int,str:StringBuilder) = {
+    (minK to maxK).foreach(k => {
+      val value = NDCG_overall.getMeasure(ratingsTraining, ratingsTest, model_my, k)
+      val msg: String = "NDCG_overall at " + k + " = " + value
+      println(msg)
+      str.append(msg + "\n")
+    })
+
+    (minK to maxK).foreach(k => {
+      val value = Precision_overall.getMeasure(ratingsTraining, ratingsTest, model_my, k)
+
+      val msg: String = "Precision_overall at " + k + " = " + value
+      println(msg)
+      str.append(msg + "\n")
+    })
   }
 
   def saveModel(filePath:String, sc:SparkContext, model:MatrixFactorizationModel) ={
