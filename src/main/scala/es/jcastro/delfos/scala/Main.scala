@@ -16,9 +16,9 @@ import org.apache.spark.{SparkConf, SparkContext}
 /**
   * Created by jcastro on 10/08/2017.
   */
-object Main {
+object Main extends App {
 
-  def main(args: Array[String]) {
+  override def main(args: Array[String]) {
     println("Executing spark-single-user-rs")
 
     val sparkConfiguration = new SparkConf()
@@ -121,21 +121,7 @@ object Main {
 
     val str:StringBuilder = new StringBuilder()
 
-    (minK to maxK).foreach(k => {
-      val value = NDCG_inTest.getMeasure(ratesAndPreds,k)
-
-      val msg:String = "NDCG_inTest at "+k+" = "+value
-      println(msg)
-      str.append(msg+"\n")
-    })
-
-    (minK to maxK).foreach(k => {
-      val value = Precision_inTest.getMeasure(ratesAndPreds,k)
-
-      val msg:String = "Precision_inTest at "+k+" = "+value
-      println(msg)
-      str.append(msg+"\n")
-    })
+    //computeMeasuresOnTestProducts(ratesAndPreds, minK, maxK,str)
 
     computeMeasuresOnAllProducts(ratingsTraining, ratingsTest, model_my, minK, maxK,str)
 
@@ -144,7 +130,25 @@ object Main {
     saveModel(filePath,sc,model)
   }
 
-  private def computeMeasuresOnAllProducts(ratingsTraining: RDD[Rating], ratingsTest: RDD[Rating], model_my: MatrixFactorizationModel_my, minK: Int, maxK: Int,str:StringBuilder) = {
+  private def computeMeasuresOnTestProducts(ratesAndPreds: RDD[((Int, Int), (Double, Double))], minK: Int, maxK: Int, str:StringBuilder) = {
+    (minK to maxK).foreach(k => {
+      val value = NDCG_inTest.getMeasure(ratesAndPreds, k)
+
+      val msg: String = "NDCG_inTest at " + k + " = " + value
+      println(msg)
+      str.append(msg + "\n")
+    })
+
+    (minK to maxK).foreach(k => {
+      val value = Precision_inTest.getMeasure(ratesAndPreds, k)
+
+      val msg: String = "Precision_inTest at " + k + " = " + value
+      println(msg)
+      str.append(msg + "\n")
+    })
+  }
+
+  private def computeMeasuresOnAllProducts(ratingsTraining: RDD[Rating], ratingsTest: RDD[Rating], model_my: MatrixFactorizationModel_my, minK: Int, maxK: Int, str:StringBuilder) = {
     (minK to maxK).foreach(k => {
       val value = NDCG_overall.getMeasure(ratingsTraining, ratingsTest, model_my, k)
       val msg: String = "NDCG_overall at " + k + " = " + value
