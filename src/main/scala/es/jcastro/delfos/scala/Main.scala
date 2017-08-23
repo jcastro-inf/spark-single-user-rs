@@ -8,6 +8,7 @@ import es.jcastro.delfos.scala.common.Chronometer
 import es.jcastro.delfos.scala.evaluation._
 import es.jcastro.delfos.scala.evaluation.intest.{NDCG_inTest, Precision_inTest}
 import es.jcastro.delfos.scala.evaluation.overall.{NDCG_overall, Precision_overall}
+import org.apache.commons.cli.{CommandLine, Options}
 import org.apache.commons.io.FileUtils
 import org.apache.spark.mllib.recommendation.{ALS, MatrixFactorizationModel, Rating}
 import org.apache.spark.rdd.RDD
@@ -18,7 +19,13 @@ import org.apache.spark.{SparkConf, SparkContext}
   */
 object Main extends App {
 
+
+
+
   override def main(args: Array[String]) {
+
+    var cmd  = consoleParser(args)
+
     println("Executing spark-single-user-rs")
 
     val sparkConfiguration = new SparkConf()
@@ -27,26 +34,20 @@ object Main extends App {
     // Let's create the Spark Context using the configuration we just created
     val sc = new SparkContext(sparkConfiguration)
 
-
     val hdfsCheckpointDir = "hdfs://192.168.10.27:8020/spark-single-user-grs/checkpoints"
     val localCheckpointDir = "./checkpoint/"
 
     var checkpointDir = if (isMachine("corbeta-jcastro-debian"))
       localCheckpointDir
-      else hdfsCheckpointDir
+      else cmd.getOptionValue("checkpointDir",localCheckpointDir)
 
     sc.setCheckpointDir(checkpointDir)
 
-    val filePath : String =args(0)
+    val ratings = getRatings(sc, cmd)
 
-    sc.addFile(filePath)
-
-    // Load and parse the data
-    val data = sc.textFile(filePath)
-
-    val ratings:RDD[Rating] = data.map(_.split('\t') match { case Array(user, product, rate,timestamp) =>
-      Rating(user.toInt, product.toInt, rate.toDouble)
-    })
+    val kRange = getKRange(cmd)
+    val minK:Int = kRange._1
+    val maxK:Int = kRange._2
 
     println("Dataset has '"+ratings.count()+"' ratings")
 
@@ -80,7 +81,12 @@ object Main extends App {
 
     println("Building ALS model ")
     val chronometer = new Chronometer
-    val model:MatrixFactorizationModel = ALS.train(ratingsTraining, rank, numIterations, 0.01)
+
+    val model:MatrixFactorizationModel = if(cmd.hasOption("isImplicit") || cmd.hasOption("makeImplicit") )
+      ALS.trainImplicit(ratingsTraining,rank, numIterations,0.01,1)
+    else
+      ALS.train(ratingsTraining, rank, numIterations, 0.01)
+
     println("\tdone in "+chronometer.printTotalElapsed)
 
     val users:RDD[Int] = ratings.map(_.user).distinct()
@@ -116,18 +122,15 @@ object Main extends App {
       model.productFeatures.collect().toMap
     )
 
-    val minK:Int = 1
-    val maxK:Int = 100
-
+    
     val str:StringBuilder = new StringBuilder()
 
-    //computeMeasuresOnTestProducts(ratesAndPreds, minK, maxK,str)
+    if(!cmd.hasOption("makeImplicit") && !cmd.hasOption("isImplicit"))
+      computeMeasuresOnTestProducts(ratesAndPreds, minK, maxK,str)
 
     computeMeasuresOnAllProducts(ratingsTraining, ratingsTest, model_my, minK, maxK,str)
 
     println(str.toString())
-
-    saveModel(filePath,sc,model)
   }
 
   private def computeMeasuresOnTestProducts(ratesAndPreds: RDD[((Int, Int), (Double, Double))], minK: Int, maxK: Int, str:StringBuilder) = {
@@ -186,5 +189,95 @@ object Main extends App {
     val isMachine = machine.equals(str)
 
     isMachine
+  }
+  def consoleParser(args:Array[String])={
+
+    val options = new Options()
+
+    val input =  new org.apache.commons.cli.Option("i","input",true,"input file path" )
+    input.setRequired(true)
+    options.addOption(input)
+
+    val makeImplicit = new org.apache.commons.cli.Option("mim","makeImplicit",false,"convert input as implicit" )
+    makeImplicit.setRequired(false)
+    options.addOption(makeImplicit)
+
+    val isImplicit = new org.apache.commons.cli.Option("iim","isImplicit",false,"treat input as implicit --> expect only 2tuples in the input file" )
+    isImplicit.setRequired(false)
+    options.addOption(isImplicit)
+
+    val checkpointDir = new org.apache.commons.cli.Option("c","checkpointDir",true,"specify the checkpoint dir for spark" )
+    checkpointDir.setRequired(false)
+    options.addOption(checkpointDir)
+
+    val k = new org.apache.commons.cli.Option("k","kRange", true, "range of top-k recommendations to be evaluated")
+    k.setRequired(false)
+    k.setArgs(2)
+    options.addOption(k)
+
+    import org.apache.commons.cli.HelpFormatter
+    val parser = new org.apache.commons.cli.BasicParser()
+    val formatter = new HelpFormatter
+
+    var cmd : CommandLine = null
+    try
+      cmd = parser.parse(options, args)
+    catch {
+      case e: Exception =>
+        System.out.println(e.getMessage)
+        formatter.printHelp("utility-name", options)
+        System.exit(1)
+        cmd  = null
+    }
+
+    cmd
+  }
+
+  def getRatings(sc: SparkContext, commandLine: CommandLine) :RDD[Rating] = {
+
+
+    val filePath : String = commandLine.getOptionValue("input")
+    sc.addFile(filePath)
+
+    val makeImplicit: Boolean = commandLine.hasOption("makeImplicit")
+    val isImplicit: Boolean = commandLine.hasOption("isImplicit")
+
+    // Load and parse the data
+    val data = sc.textFile(filePath)
+
+    if(isImplicit ||makeImplicit){
+      val ratings:RDD[Rating] = data.map(_.split('\t'))
+        .map(record => {
+          val user    = record(0).toInt
+          val product = record(1).toInt
+          val rating  = 5.0
+
+          new Rating(user,product,rating)
+        })
+      ratings
+    }else {
+      val ratings: RDD[Rating] = data.map(_.split('\t'))
+        .map(record => {
+          val user = record(0).toInt
+          val product = record(1).toInt
+          val rating = record(2).toDouble
+
+          new Rating(user, product, rating)
+        })
+      ratings
+    }
+  }
+
+  def getKRange(cmd: CommandLine): (Int,Int) = {
+    val minK = if(cmd.hasOption("kRange")) cmd.getOptionValues("kRange")(0).toInt else 1
+    val maxK = if(cmd.hasOption("kRange")) cmd.getOptionValues("kRange")(1).toInt else 100
+
+    if(minK <= 0 || maxK <=0 )
+      throw new IllegalArgumentException("k range cannot contain negative numbers or zero")
+
+    if(minK < maxK)
+      (minK,maxK)
+    else
+      (maxK,minK)
   }
 }

@@ -12,46 +12,12 @@ object Precision_overall {
 
     val ratingsTrainByUser:Map[Int, Iterable[Rating]] = ratingsTrain.groupBy(_.user).collect().toMap
 
-    val precision_byUser:Map[Int,Double] = ratingsTest.groupBy(_.user).map(entry=>{
-      val user:Int = entry._1
-      val userTestRatings:Map[Int,Rating] = entry._2
-        .map(rating => (rating.product,rating))
-        .toMap
+    val ratingsTestByUser = ratingsTest.groupBy(_.user)
 
-      val userTrainRatings:Map[Int,Rating] = ratingsTrainByUser
-        .getOrElse(user,Iterable.empty[Rating])
-        .map(rating => (rating.product,rating))
-        .toMap
-
-      val itemsRated:Set[Int] = userTrainRatings.keySet
-      val notRated: Set[Int] = products.filter(!itemsRated.contains(_))
-
-      if(userTestRatings.isEmpty)
-        (user,Double.NaN)
-
-      val userPredictionsWithRating: Seq[(Int, Double, Double)] =notRated.toSeq
-        .map(product => {
-
-          val prediction:Double  = model.predict(user,product).getOrElse(0.0)
-          val rating: Double = userTestRatings.get(product).map(_.rating).getOrElse(0.0)
-
-          (product,prediction,rating)
-        })
-
-      val byPrediction: Ordering[(Int, Double, Double)] = Ordering.by(_._2)
-
-      val bestByPrediction: Seq[(Int, Double, Double)] = userPredictionsWithRating
-        .sorted(byPrediction).reverse
-        .slice(0, k)
-
-      val userPredictions_actual: Seq[Double] = bestByPrediction.map(_._3)
-
-      val precision = precisionAtK(userPredictions_actual, k)
-
-      (user, precision)
-    })
+    val precision_byUser:Array[(Int,Double)] = ratingsTestByUser
+      .map(getMeasureThisUser(k, products, ratingsTrainByUser,model, _))
       .filter(entry => {!Double.NaN.equals(entry._2)})
-      .collect().toMap
+      .collect()
 
     val size:Double = precision_byUser.size
 
@@ -60,7 +26,52 @@ object Precision_overall {
     precision
   }
 
-  def getMeasure( predictions : RDD[((Int, Int), (Double))], ratings : RDD[Rating], k:Int):Double = {
+  def getMeasureThisUser(
+                          k: Int,
+                          products: Set[Int],
+                          ratingsTrainByUser: Map[Int, Iterable[Rating]],
+                          model: MatrixFactorizationModel_my,
+                          entry: (Int, Iterable[Rating])): (Int, Double) = {
+
+    val user: Int = entry._1
+    val userTestRatings: Map[Int, Rating] = entry._2
+      .map(rating => (rating.product, rating))
+      .toMap
+
+    val userTrainRatings: Map[Int, Rating] = ratingsTrainByUser
+      .getOrElse(user, Iterable.empty[Rating])
+      .map(rating => (rating.product, rating))
+      .toMap
+
+    val itemsRated: Set[Int] = userTrainRatings.keySet
+    val notRated: Set[Int] = products.filter(!itemsRated.contains(_))
+
+    if (userTestRatings.isEmpty)
+      (user, Double.NaN)
+
+    val userPredictionsWithRating: Seq[(Int, Double, Double)] = notRated.toSeq
+      .map(product => {
+
+        val prediction: Double = model.predict(user, product).getOrElse(0.0)
+        val rating: Double = userTestRatings.get(product).map(_.rating).getOrElse(0.0)
+
+        (product, prediction, rating)
+      })
+
+    val byPrediction: Ordering[(Int, Double, Double)] = Ordering.by(_._2)
+
+    val bestByPrediction: Seq[(Int, Double, Double)] = userPredictionsWithRating
+      .sorted(byPrediction).reverse
+      .slice(0, k)
+
+    val userPredictions_actual: Seq[Double] = bestByPrediction.map(_._3)
+
+    val precision = precisionAtK(userPredictions_actual, k)
+
+    (user, precision)
+  }
+
+  def getMeasure(predictions : RDD[((Int, Int), (Double))], ratings : RDD[Rating], k:Int):Double = {
     val ratingsByUser:Map[Int,Iterable[Rating]] = ratings.groupBy(_.user).collect().toMap
     val predictionsByUser: RDD[(Int, Iterable[((Int,Int),Double)])] = predictions.groupBy(_._1._1)
 
@@ -69,7 +80,7 @@ object Precision_overall {
 
   def getMeasure( predictionsByUser : RDD[(Int, Iterable[((Int,Int),Double)])], ratingsByUser:Map[Int,Iterable[Rating]], k:Int):Double ={
 
-    val precision_byUser:Seq[(Int, Double)] = predictionsByUser.map(userPredictions => {
+    val precision_byUser:RDD[(Int, Double)] = predictionsByUser.map(userPredictions => {
 
       val user = userPredictions._1
 
@@ -104,14 +115,14 @@ object Precision_overall {
 
         (user, precision)
       }
-    }).collect().toSeq
+    })
 
-    val precision_byUser_noNaNs:Seq[Double] = precision_byUser.map(_._2)
+    val precision_byUser_noNaNs:RDD[Double] = precision_byUser.map(_._2)
       .filter(!Double.NaN.equals(_))
 
     val precision_sum:Double = precision_byUser_noNaNs.sum
 
-    val precision:Double = precision_sum/precision_byUser.length
+    val precision:Double = precision_sum/precision_byUser.count()
 
     precision
   }
@@ -122,19 +133,12 @@ object Precision_overall {
     var length:Int = Math.min(k,listOfK.length);
 
     val itemCounts:Seq[Double] = ( 0 to length-1).map(i => {
-        val relevant = if(listOfK(i) >= 4.0) 1.0 else 0.0
-        relevant
-      }).toSeq
+      val precision = if (listOfK(i) >= 3.5) 1.0 else 0.0
+      precision
+    })
 
-    val precision:Double = itemCounts.sum / itemCounts.size
+    val precision = itemCounts.map(_/k).sum
 
     precision
   }
-
-  def log2(value:Double): Double ={
-    val log2OfValue = Math.log(value)/Math.log(2)
-
-    log2OfValue
-  }
-
 }
