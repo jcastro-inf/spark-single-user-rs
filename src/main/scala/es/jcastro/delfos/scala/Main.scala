@@ -251,7 +251,10 @@ object Main extends App {
     val isImplicit: Boolean = cmd.hasOption("isImplicit")
 
     // Load and parse the data
-    val data = sc.textFile(filePath,getNumPartitions(cmd))
+    val data = if(cmd.hasOption("numPartitions"))
+      sc.textFile(filePath,getNumPartitions(cmd))
+    else
+      sc.textFile(filePath)
 
     println("Default parallelism = "+sc.defaultParallelism)
     println("data num partitions = "+ data.getNumPartitions)
