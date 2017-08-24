@@ -3,19 +3,21 @@ package es.jcastro.delfos.scala.evaluation.overall
 import es.jcastro.delfos.scala.MatrixFactorizationModel_my
 import org.apache.spark.mllib.recommendation.Rating
 import org.apache.spark.rdd.RDD
+import collection.{Map,Set}
 
 object NDCG_overall {
 
-  def getMeasure(ratingsTrain:RDD[Rating],ratingsTest:RDD[Rating],model:MatrixFactorizationModel_my, k:Int) :Double={
+  def getMeasure(ratingsTrainTestByUser:RDD[(Int,(Iterable[Rating],Iterable[Rating]))],model:MatrixFactorizationModel_my, k:Int) :Double={
 
     val products:Set[Int] = model.productsFeatures.keySet
 
-    val ratingsTrainByUser:Map[Int, Iterable[Rating]] = ratingsTrain.groupBy(_.user).collect().toMap
-
-    val ratingsTestByUser = ratingsTest.groupBy(_.user)
-
-    val ndcg_byUser:Array[(Int,Double)] = ratingsTestByUser
-      .map(getMeasureThisUser(k, products, ratingsTrainByUser,model, _))
+    val ndcg_byUser:Array[(Int,Double)] = ratingsTrainTestByUser
+      .map(userData => {
+        val user = userData._1
+        val userTrainingData = userData._2._1
+        val userTestsData = userData._2._2
+        getMeasureThisUser(k, products, model,user, userTrainingData,userTestsData)
+      })
       .filter(entry => {!Double.NaN.equals(entry._2)})
       .collect()
 
@@ -27,19 +29,19 @@ object NDCG_overall {
   }
 
   def getMeasureThisUser(
-                                  k: Int,
-                                  products: Set[Int],
-                                  ratingsTrainByUser: Map[Int, Iterable[Rating]],
-                                  model: MatrixFactorizationModel_my,
-                                  entry: (Int, Iterable[Rating])) = {
+                          k: Int,
+                          products: Set[Int],
+                          model: MatrixFactorizationModel_my,
+                          user: Int,
+                          ratingsTrain:Iterable[Rating],
+                          ratingsTest:Iterable[Rating]
+                        ): (Int, Double) = {
 
-    val user: Int = entry._1
-    val userTestRatings: Map[Int, Rating] = entry._2
+    val userTestRatings: Map[Int, Rating] = ratingsTest
       .map(rating => (rating.product, rating))
       .toMap
 
-    val userTrainRatings: Map[Int, Rating] = ratingsTrainByUser
-      .getOrElse(user, Iterable.empty[Rating])
+    val userTrainRatings: Map[Int, Rating] = ratingsTrain
       .map(rating => (rating.product, rating))
       .toMap
 

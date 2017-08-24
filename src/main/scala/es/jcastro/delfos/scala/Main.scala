@@ -34,9 +34,8 @@ object Main extends App {
     // Let's create the Spark Context using the configuration we just created
     val sc = new SparkContext(sparkConfiguration)
 
-    val hdfsCheckpointDir = "hdfs://192.168.10.27:8020/spark-single-user-grs/checkpoints"
-    val localCheckpointDir = "./checkpoint/"
 
+    val localCheckpointDir = "./checkpoint/"
     var checkpointDir = if (isMachine("corbeta-jcastro-debian"))
       localCheckpointDir
       else cmd.getOptionValue("checkpointDir",localCheckpointDir)
@@ -128,7 +127,10 @@ object Main extends App {
     if(!cmd.hasOption("makeImplicit") && !cmd.hasOption("isImplicit"))
       computeMeasuresOnTestProducts(ratesAndPreds, minK, maxK,str)
 
-    computeMeasuresOnAllProducts(ratingsTraining, ratingsTest, model_my, minK, maxK,str)
+    val ratingsTrainTestByUser:RDD[(Int,(Iterable[Rating],Iterable[Rating]))] =
+      ratingsTraining.groupBy(_.user).join(ratingsTest.groupBy(_.user)).cache()
+
+    computeMeasuresOnAllProducts(ratingsTrainTestByUser, model_my, minK, maxK,str)
 
     println(str.toString())
   }
@@ -151,16 +153,16 @@ object Main extends App {
     })
   }
 
-  private def computeMeasuresOnAllProducts(ratingsTraining: RDD[Rating], ratingsTest: RDD[Rating], model_my: MatrixFactorizationModel_my, minK: Int, maxK: Int, str:StringBuilder) = {
+  private def computeMeasuresOnAllProducts(ratingsTrainTestByUser:RDD[(Int,(Iterable[Rating],Iterable[Rating]))], model_my: MatrixFactorizationModel_my, minK: Int, maxK: Int, str:StringBuilder) = {
     (minK to maxK).foreach(k => {
-      val value = NDCG_overall.getMeasure(ratingsTraining, ratingsTest, model_my, k)
+      val value = NDCG_overall.getMeasure(ratingsTrainTestByUser, model_my, k)
       val msg: String = "NDCG_overall at " + k + " = " + value
       println(msg)
       str.append(msg + "\n")
     })
 
     (minK to maxK).foreach(k => {
-      val value = Precision_overall.getMeasure(ratingsTraining, ratingsTest, model_my, k)
+      val value = Precision_overall.getMeasure(ratingsTrainTestByUser, model_my, k)
 
       val msg: String = "Precision_overall at " + k + " = " + value
       println(msg)
@@ -244,6 +246,8 @@ object Main extends App {
 
     // Load and parse the data
     val data = sc.textFile(filePath)
+
+    println("Default parallelism = "+sc.defaultParallelism)
 
     if(isImplicit ||makeImplicit){
       val ratings:RDD[Rating] = data.map(_.split('\t'))
