@@ -212,6 +212,11 @@ object Main extends App {
     checkpointDir.setRequired(false)
     options.addOption(checkpointDir)
 
+    val numPartitions = new org.apache.commons.cli.Option("p","numPartitions", true,"specify the number of partitions for the ratings dataset")
+    numPartitions.setRequired(false)
+    numPartitions.setArgs(1)
+    options.addOption(numPartitions)
+
     val k = new org.apache.commons.cli.Option("k","kRange", true, "range of top-k recommendations to be evaluated")
     k.setRequired(false)
     k.setArgs(2)
@@ -229,23 +234,24 @@ object Main extends App {
         System.out.println(e.getMessage)
         formatter.printHelp("utility-name", options)
         System.exit(1)
-        cmd  = null
     }
-
     cmd
   }
 
-  def getRatings(sc: SparkContext, commandLine: CommandLine) :RDD[Rating] = {
+  def getNumPartitions(cmd: CommandLine):Int = {
+    val numPartitions = cmd.getOptionValue("numPartitions","32")
+    numPartitions.toInt
+  }
 
-
-    val filePath : String = commandLine.getOptionValue("input")
+  def getRatings(sc: SparkContext, cmd: CommandLine) :RDD[Rating] = {
+    val filePath : String = cmd.getOptionValue("input")
     sc.addFile(filePath)
 
-    val makeImplicit: Boolean = commandLine.hasOption("makeImplicit")
-    val isImplicit: Boolean = commandLine.hasOption("isImplicit")
+    val makeImplicit: Boolean = cmd.hasOption("makeImplicit")
+    val isImplicit: Boolean = cmd.hasOption("isImplicit")
 
     // Load and parse the data
-    val data = sc.textFile(filePath,32)
+    val data = sc.textFile(filePath,getNumPartitions(cmd))
 
     println("Default parallelism = "+sc.defaultParallelism)
     println("data num partitions = "+ data.getNumPartitions)
