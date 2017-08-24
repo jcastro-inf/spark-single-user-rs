@@ -247,7 +247,10 @@ object Main extends App {
     // Load and parse the data
     val data = sc.textFile(filePath)
 
+
+
     println("Default parallelism = "+sc.defaultParallelism)
+    println("data num partitions = "+ data.getNumPartitions)
 
     if(isImplicit ||makeImplicit){
       val ratings:RDD[Rating] = data.map(_.split('\t'))
