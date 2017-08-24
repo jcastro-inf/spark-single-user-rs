@@ -245,9 +245,7 @@ object Main extends App {
     val isImplicit: Boolean = commandLine.hasOption("isImplicit")
 
     // Load and parse the data
-    val data = sc.textFile(filePath)
-
-
+    val data = sc.textFile(filePath,32)
 
     println("Default parallelism = "+sc.defaultParallelism)
     println("data num partitions = "+ data.getNumPartitions)
