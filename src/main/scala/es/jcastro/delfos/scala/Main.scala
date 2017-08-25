@@ -2,7 +2,6 @@ package es.jcastro.delfos.scala
 
 import java.io.File
 import java.lang.management.ManagementFactory
-import java.util.Random
 
 import es.jcastro.delfos.scala.common.Chronometer
 import es.jcastro.delfos.scala.evaluation._
@@ -19,9 +18,6 @@ import org.apache.spark.{SparkConf, SparkContext}
   */
 object Main extends App {
 
-
-
-
   override def main(args: Array[String]) {
 
     var cmd  = consoleParser(args)
@@ -34,65 +30,49 @@ object Main extends App {
     // Let's create the Spark Context using the configuration we just created
     val sc = new SparkContext(sparkConfiguration)
 
-
     val localCheckpointDir = "./checkpoint/"
     var checkpointDir = if (isMachine("corbeta-jcastro-debian"))
       localCheckpointDir
       else cmd.getOptionValue("checkpointDir",localCheckpointDir)
-
     sc.setCheckpointDir(checkpointDir)
 
-    val ratings = getRatings(sc, cmd)
+    val ratings = getRatings(sc, cmd).cache()
 
     val kRange = getKRange(cmd)
     val minK:Int = kRange._1
     val maxK:Int = kRange._2
-
-    println("Dataset has '"+ratings.count()+"' ratings")
-
-    // Build the recommendation model using ALS
-    val rank = 20
-    val numIterations = 100
-
-    val seed:Long = 0l
-
-    val ratingsWithRandom:RDD[(Rating,Double)] = ratings
-      .map(rating => {
-        val thisRatingSeed = rating.hashCode()+seed
-        val random = new Random(thisRatingSeed)
-        val randomValue:Double =random.nextDouble()
-        (rating, randomValue)
-      })
-
-    val trainingRatio :Double= 0.8
-
-    val ratingsTraining:RDD[Rating] = ratingsWithRandom.filter(entry => {
-      val training:Boolean = entry._2 <= trainingRatio
-      training
-    }).map(_._1).cache()
-    println("\ttrain: "+ratingsTraining.count())
-
-    val ratingsTest:RDD[Rating] = ratingsWithRandom.filter(entry => {
-      val training:Boolean = entry._2 > trainingRatio
-      training
-    }).map(_._1).cache()
-    println("\ttest: "+ratingsTest.count())
-
-    println("Building ALS model ")
-    val chronometer = new Chronometer
-
-    val model:MatrixFactorizationModel = if(cmd.hasOption("isImplicit") || cmd.hasOption("makeImplicit") )
-      ALS.trainImplicit(ratingsTraining,rank, numIterations,0.01,1)
-    else
-      ALS.train(ratingsTraining, rank, numIterations, 0.01)
-
-    println("\tdone in "+chronometer.printTotalElapsed)
 
     val users:RDD[Int] = ratings.map(_.user).distinct()
     val products:RDD[Int] = ratings.map(_.product).distinct()
 
     println("#users:    "+users.count())
     println("#products: "+products.count())
+    println("#ratings:  "+ratings.count())
+
+    // Build the recommendation model using ALS
+    val rank = 20
+    val numIterations = 100
+
+    val seed:Long = cmd.getOptionValue("seed","0").toLong
+    val trainingRatio :Double= 0.8
+
+    val trainTestPartitions = ratings.randomSplit(Array(trainingRatio, 1- trainingRatio), seed = seed)
+
+    val ratingsTraining:RDD[Rating] = trainTestPartitions(0).cache()
+    val ratingsTest:RDD[Rating] = trainTestPartitions(1).cache()
+
+
+    val chronometer = new Chronometer
+
+    val model:MatrixFactorizationModel = if(cmd.hasOption("isImplicit") || cmd.hasOption("makeImplicit") ) {
+      println("Building implicit ALS model ")
+      ALS.trainImplicit(ratingsTraining, rank, numIterations, 0.01, 1)
+    }else {
+      println("Building ALS model ")
+      ALS.train(ratingsTraining, rank, numIterations, 0.01)
+    }
+
+    println("\tdone in "+chronometer.printTotalElapsed)
 
     val ratingsTraining_inDriver:Set[(Int,Int)] = ratingsTraining.map(rating => (rating.user,rating.product)).collect().toSet
     println("#ratings:  "+ratingsTraining_inDriver.size)
