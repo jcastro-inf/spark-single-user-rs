@@ -74,9 +74,6 @@ object Main extends App {
 
     println("\tdone in "+chronometer.printTotalElapsed)
 
-    val ratingsTraining_inDriver:Set[(Int,Int)] = ratingsTraining.map(rating => (rating.user,rating.product)).collect().toSet
-    println("#ratings:  "+ratingsTraining_inDriver.size)
-
     val usersProductsReduced:RDD[(Int,Int)] = ratingsTest.map(r=> (r.user,r.product)).cache()
     val predictionsReduced:RDD[((Int,Int),Double)] =
       model.predict(usersProductsReduced).map { case Rating(user, product, rate) =>

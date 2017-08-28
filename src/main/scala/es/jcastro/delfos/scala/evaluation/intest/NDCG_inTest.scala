@@ -1,5 +1,6 @@
 package es.jcastro.delfos.scala.evaluation.intest
 
+import es.jcastro.delfos.scala.evaluation.NDCG
 import org.apache.spark.rdd.RDD
 
 object NDCG_inTest {
@@ -35,13 +36,11 @@ object NDCG_inTest {
       val userPredictions_actual: Seq[Double] = bestByPrediction.map(_._3)
       val userPredictions_perfect: Seq[Double] = bestByRating.map(_._3)
 
-      val dcg_actual = dcgAtK(userPredictions_actual, k)
-      val dcg_perfect = dcgAtK(userPredictions_perfect, k)
+      val dcg_actual = NDCG.dcgAtK(userPredictions_actual, k)
+      val dcg_perfect = NDCG.dcgAtK(userPredictions_perfect, k)
 
       val ndcg = dcg_actual / dcg_perfect
-
       (user, ndcg)
-
     })
 
     val ndcg_byUser_noNaNs:RDD[Double] = ndcg_byUser.map(_._2)
@@ -53,27 +52,4 @@ object NDCG_inTest {
 
     ndcg
   }
-
-  def dcgAtK(list:Seq[Double], k:Integer):Double = {
-    val listOfK = list.slice(0,k)
-
-    var length:Int = Math.min(k,listOfK.length);
-
-    val itemCounts = ( 0 to length-1).map(i => {
-        val discount = if (i>= 2) (1/log2(i+1)) else 1.0
-        val thisItemCount = listOfK(i) * discount
-        thisItemCount
-      })
-
-    val dcg = itemCounts.sum
-
-    dcg
-  }
-
-  def log2(value:Double): Double ={
-    val log2OfValue = Math.log(value)/Math.log(2)
-
-    log2OfValue
-  }
-
 }
