@@ -85,24 +85,25 @@ object Main extends App {
       ((user, product), rate)
     }
 
-    val ratesAndPreds:RDD[((Int,Int),(Double,Double))] = ratingsTestTuples.join(predictionsReduced).cache()
-
-    val mse:Double = MSE.getMeasure(ratesAndPreds)
-    println("Mean Squared Error = " + mse)
-    val mae:Double = MAE.getMeasure(ratesAndPreds)
-    println("Mean Absolute Error = " + mae)
+    val ratesAndPreds: RDD[((Int, Int), (Double, Double))] = ratingsTestTuples.join(predictionsReduced).cache()
+    if(!cmd.hasOption("implicitFeedback")) {
+      val mse: Double = MSE.getMeasure(ratesAndPreds)
+      println("Mean Squared Error = " + mse)
+      val mae: Double = MAE.getMeasure(ratesAndPreds)
+      println("Mean Absolute Error = " + mae)
+    }
 
     println("Computing NDCG with separate user computation")
     val model_my:MatrixFactorizationModel_my = new MatrixFactorizationModel_my(
       model.userFeatures.collect().toMap,
       model.productFeatures.collect().toMap
     )
-
     
     val str:StringBuilder = new StringBuilder()
 
-    if(!cmd.hasOption("implicitFeedback"))
-      computeMeasuresOnTestProducts(ratesAndPreds, minK, maxK,str)
+    if(!cmd.hasOption("implicitFeedback")) {
+      computeMeasuresOnTestProducts(ratesAndPreds, minK, maxK, str)
+    }
 
     val ratingsTrainTestByUser:RDD[(Int,(Iterable[Rating],Iterable[Rating]))] =
       ratingsTraining.groupBy(_.user).join(ratingsTest.groupBy(_.user)).cache()
