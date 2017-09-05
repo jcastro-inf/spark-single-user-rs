@@ -64,7 +64,7 @@ object Main extends App {
 
     val chronometer = new Chronometer
 
-    val model:MatrixFactorizationModel = if(cmd.hasOption("isImplicit") || cmd.hasOption("makeImplicit") ) {
+    val model:MatrixFactorizationModel = if(cmd.hasOption("implicitFeedback") ) {
       println("Building implicit ALS model ")
       ALS.trainImplicit(ratingsTraining, rank, numIterations, 0.01, 1)
     }else {
@@ -101,7 +101,7 @@ object Main extends App {
     
     val str:StringBuilder = new StringBuilder()
 
-    if(!cmd.hasOption("makeImplicit") && !cmd.hasOption("isImplicit"))
+    if(!cmd.hasOption("implicitFeedback"))
       computeMeasuresOnTestProducts(ratesAndPreds, minK, maxK,str)
 
     val ratingsTrainTestByUser:RDD[(Int,(Iterable[Rating],Iterable[Rating]))] =
@@ -177,13 +177,9 @@ object Main extends App {
     input.setRequired(true)
     options.addOption(input)
 
-    val makeImplicit = new org.apache.commons.cli.Option("mim","makeImplicit",false,"convert input as implicit" )
-    makeImplicit.setRequired(false)
-    options.addOption(makeImplicit)
-
-    val isImplicit = new org.apache.commons.cli.Option("iim","isImplicit",false,"treat input as implicit --> expect only 2tuples in the input file" )
-    isImplicit.setRequired(false)
-    options.addOption(isImplicit)
+    val implicitFeedback = new org.apache.commons.cli.Option("if","implicitFeedback",false,"take input as implicit (ignore rating value)" )
+    implicitFeedback.setRequired(false)
+    options.addOption(implicitFeedback)
 
     val checkpointDir = new org.apache.commons.cli.Option("c","checkpointDir",true,"specify the checkpoint dir for spark" )
     checkpointDir.setRequired(false)
@@ -194,7 +190,11 @@ object Main extends App {
     numPartitions.setArgs(1)
     options.addOption(numPartitions)
 
-    val k = new org.apache.commons.cli.Option("k","kRange", true, "range of top-k recommendations to be evaluated")
+    val debug = new org.apache.commons.cli.Option("d","debug", false,"print debug messages")
+    numPartitions.setRequired(false)
+    options.addOption(debug)
+
+    val k = new org.apache.commons.cli.Option("k","kRange", true, "range of top-k recommendations to be evaluated (two positive integer values)")
     k.setRequired(false)
     k.setArgs(2)
     options.addOption(k)
@@ -224,8 +224,7 @@ object Main extends App {
     val filePath : String = cmd.getOptionValue("input")
     sc.addFile(filePath)
 
-    val makeImplicit: Boolean = cmd.hasOption("makeImplicit")
-    val isImplicit: Boolean = cmd.hasOption("isImplicit")
+    val implicitFeedback: Boolean = cmd.hasOption("implicitFeedback")
 
     // Load and parse the data
     val data = if(cmd.hasOption("numPartitions"))
@@ -233,10 +232,12 @@ object Main extends App {
     else
       sc.textFile(filePath)
 
-    println("Default parallelism = "+sc.defaultParallelism)
-    println("data num partitions = "+ data.getNumPartitions)
+    if(cmd.hasOption("debug")) {
+      println("Default parallelism = " + sc.defaultParallelism)
+      println("data num partitions = " + data.getNumPartitions)
+    }
 
-    if(isImplicit ||makeImplicit){
+    if(implicitFeedback){
       val ratings:RDD[Rating] = data.map(_.split('\t'))
         .map(record => {
           val user    = record(0).toInt
@@ -261,7 +262,7 @@ object Main extends App {
 
   def getKRange(cmd: CommandLine): (Int,Int) = {
     val minK = if(cmd.hasOption("kRange")) cmd.getOptionValues("kRange")(0).toInt else 1
-    val maxK = if(cmd.hasOption("kRange")) cmd.getOptionValues("kRange")(1).toInt else 100
+    val maxK = if(cmd.hasOption("kRange")) cmd.getOptionValues("kRange")(1).toInt else 20
 
     if(minK <= 0 || maxK <=0 )
       throw new IllegalArgumentException("k range cannot contain negative numbers or zero")

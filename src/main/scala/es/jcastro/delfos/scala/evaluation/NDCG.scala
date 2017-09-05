@@ -2,8 +2,6 @@ package es.jcastro.delfos.scala.evaluation
 
 object NDCG {
 
-
-
   def dcgAtK(list:Seq[Double], k:Integer):Double = {
     val listOfK = list.slice(0,k)
 
