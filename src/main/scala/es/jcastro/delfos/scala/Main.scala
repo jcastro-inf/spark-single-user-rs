@@ -2,6 +2,7 @@ package es.jcastro.delfos.scala
 
 import java.io.File
 import java.lang.management.ManagementFactory
+import java.util
 
 import es.jcastro.delfos.scala.common.Chronometer
 import es.jcastro.delfos.scala.evaluation._
@@ -50,11 +51,19 @@ object Main extends App {
     println("#ratings:  "+ratings.count())
 
     // Build the recommendation model using ALS
-    val rank = 20
-    val numIterations = 100
+    val rank = cmd.getOptionValue("rank","20").toInt
+    if(rank <= 0 )
+      throw new IllegalArgumentException("rank must be strictly positive")
+
+    val numIterations = cmd.getOptionValue("numIterations","100").toInt
+    if(numIterations <= 0 )
+      throw new IllegalArgumentException("numIterations must be strictly positive")
 
     val seed:Long = cmd.getOptionValue("seed","0").toLong
-    val trainingRatio :Double= 0.8
+    val trainingRatio :Double= cmd.getOptionValue("trainingRatio","0.8").toDouble
+    if(trainingRatio<0 || trainingRatio>1.0){
+      throw new IllegalArgumentException("trainingRatio must be in [0,1]")
+    }
 
     val trainTestPartitions = ratings.randomSplit(Array(trainingRatio, 1- trainingRatio), seed = seed)
 
@@ -174,43 +183,79 @@ object Main extends App {
 
     isMachine
   }
+
   def consoleParser(args:Array[String])={
 
     val options = new Options()
 
-    val input =  new org.apache.commons.cli.Option("i","input",true,"input file path" )
+    val input =  new org.apache.commons.cli.Option("i","input",true,"location of the input file that contains the ratings dataset" )
     input.setRequired(true)
     options.addOption(input)
-
-    val implicitFeedback = new org.apache.commons.cli.Option("if","implicitFeedback",false,"take input as implicit (ignore rating value)" )
-    implicitFeedback.setRequired(false)
-    options.addOption(implicitFeedback)
 
     val checkpointDir = new org.apache.commons.cli.Option("c","checkpointDir",true,"specify the checkpoint directory for spark" )
     checkpointDir.setRequired(false)
     options.addOption(checkpointDir)
 
-    val numPartitions = new org.apache.commons.cli.Option("p","numPartitions", true,"specify the number of partitions for the ratings dataset")
+    val numPartitions = new org.apache.commons.cli.Option("p","numPartitions", true,"specify the number of partitions that spark makes of the RDD for the ratings dataset")
     numPartitions.setRequired(false)
     numPartitions.setArgs(1)
     options.addOption(numPartitions)
 
     val debug = new org.apache.commons.cli.Option("d","debug", false,"print debug messages")
-    numPartitions.setRequired(false)
+    debug.setRequired(false)
     options.addOption(debug)
 
     val k = new org.apache.commons.cli.Option("k","kRange", true, "range of top-k recommendations to be evaluated (two positive integer values)")
     k.setRequired(false)
     k.setArgs(2)
     options.addOption(k)
-    val seed = new org.apache.commons.cli.Option("s","seed", true, "seed used in the model generation")
+
+    val trainingRatio = new org.apache.commons.cli.Option("trainingRatio", true, "ratio of ratings included in the training dataset")
+    trainingRatio.setRequired(false)
+    trainingRatio.setArgs(1)
+    options.addOption(trainingRatio)
+
+    val lambda = new org.apache.commons.cli.Option("lambda", true, "ALS regularization factor (recommended: 0.01)")
+    lambda.setRequired(false)
+    lambda.setArgs(1)
+    options.addOption(lambda)
+
+    val rank = new org.apache.commons.cli.Option("r","rank", true, "number of features to use in the ALS model")
+    rank.setRequired(false)
+    rank.setArgs(1)
+    options.addOption(rank)
+
+    val numIterations = new org.apache.commons.cli.Option("n","numIterations", true, "number of iterations of ALS (recommended: 10-20)")
+    numIterations.setRequired(false)
+    numIterations.setArgs(1)
+    options.addOption(numIterations)
+
+    val seed = new org.apache.commons.cli.Option("s","seed", true, "seed used in the ALS model generation")
     seed.setRequired(false)
-    seed.setArgs(2)
+    seed.setArgs(1)
     options.addOption(seed)
 
-    import org.apache.commons.cli.HelpFormatter
+    val implicitFeedback = new org.apache.commons.cli.Option("if","implicitFeedback",false,"generate ALS model taking input as implicit (ignore rating value)" )
+    implicitFeedback.setRequired(false)
+    options.addOption(implicitFeedback)
+
+    val alpha = new org.apache.commons.cli.Option("alpha", true, "ALS confidence parameter (only applies for implicitFeedback=true)")
+    alpha.setRequired(false)
+    alpha.setArgs(1)
+    options.addOption(alpha)
+
+    val help = new org.apache.commons.cli.Option("h","help", true, "print the help page")
+    help.setRequired(false)
+    help.setArgs(1)
+    options.addOption(help)
+
+    val list = options.getOptions
+      .asInstanceOf[util.Collection[org.apache.commons.cli.Option]]
+
+    val newList = new util.ArrayList[org.apache.commons.cli.Option](list)
+
     val parser = new org.apache.commons.cli.BasicParser()
-    val formatter = new HelpFormatter
+    val formatter = new org.apache.commons.cli.HelpFormatter
 
     var cmd : CommandLine = null
     try
@@ -218,9 +263,14 @@ object Main extends App {
     catch {
       case e: Exception =>
         System.out.println(e.getMessage)
-        formatter.printHelp("utility-name", options)
+        formatter.printHelp("spark-single-user-rs", options)
         System.exit(1)
     }
+
+    if(cmd.hasOption("help")){
+      formatter.printHelp("spark-single-user-rs", options)
+    }
+
     cmd
   }
 
