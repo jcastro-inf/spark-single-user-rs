@@ -61,15 +61,27 @@ object Main extends App {
     val ratingsTraining:RDD[Rating] = trainTestPartitions(0).cache()
     val ratingsTest:RDD[Rating] = trainTestPartitions(1).cache()
 
-
     val chronometer = new Chronometer
 
     val model:MatrixFactorizationModel = if(cmd.hasOption("implicitFeedback") ) {
       println("Building implicit ALS model ")
-      ALS.trainImplicit(ratingsTraining, rank, numIterations, 0.01, 1)
+      ALS.trainImplicit(
+        ratings = ratingsTraining,
+        rank = rank,
+        iterations = numIterations,
+        lambda = 0.01,
+        blocks = -1,
+        alpha = 0.01,
+        seed = seed)
     }else {
       println("Building ALS model ")
-      ALS.train(ratingsTraining, rank, numIterations, 0.01)
+      ALS.train(
+        ratings = ratingsTraining,
+        rank = rank,
+        iterations = numIterations,
+        lambda = 0.01,
+        blocks = -1,
+        seed = seed)
     }
 
     println("\tdone in "+chronometer.printTotalElapsed)
@@ -98,28 +110,23 @@ object Main extends App {
       model.userFeatures.collect().toMap,
       model.productFeatures.collect().toMap
     )
-    
-    val str:StringBuilder = new StringBuilder()
 
     if(!cmd.hasOption("implicitFeedback")) {
-      computeMeasuresOnTestProducts(ratesAndPreds, minK, maxK, str)
+      computeMeasuresOnTestProducts(ratesAndPreds, minK, maxK)
     }
 
     val ratingsTrainTestByUser:RDD[(Int,(Iterable[Rating],Iterable[Rating]))] =
       ratingsTraining.groupBy(_.user).join(ratingsTest.groupBy(_.user)).cache()
 
-    computeMeasuresOnAllProducts(ratingsTrainTestByUser, model_my, minK, maxK,str)
-
-    println(str.toString())
+    computeMeasuresOnAllProducts(ratingsTrainTestByUser, model_my, minK, maxK)
   }
 
-  private def computeMeasuresOnTestProducts(ratesAndPreds: RDD[((Int, Int), (Double, Double))], minK: Int, maxK: Int, str:StringBuilder) = {
+  private def computeMeasuresOnTestProducts(ratesAndPreds: RDD[((Int, Int), (Double, Double))], minK: Int, maxK: Int) = {
     (minK to maxK).foreach(k => {
       val value = NDCG_inTest.getMeasure(ratesAndPreds, k)
 
       val msg: String = "NDCG_inTest at " + k + " = " + value
       println(msg)
-      str.append(msg + "\n")
     })
 
     (minK to maxK).foreach(k => {
@@ -127,16 +134,14 @@ object Main extends App {
 
       val msg: String = "Precision_inTest at " + k + " = " + value
       println(msg)
-      str.append(msg + "\n")
     })
   }
 
-  private def computeMeasuresOnAllProducts(ratingsTrainTestByUser:RDD[(Int,(Iterable[Rating],Iterable[Rating]))], model_my: MatrixFactorizationModel_my, minK: Int, maxK: Int, str:StringBuilder) = {
+  private def computeMeasuresOnAllProducts(ratingsTrainTestByUser:RDD[(Int,(Iterable[Rating],Iterable[Rating]))], model_my: MatrixFactorizationModel_my, minK: Int, maxK: Int) = {
     (minK to maxK).foreach(k => {
       val value = NDCG_overall.getMeasure(ratingsTrainTestByUser, model_my, k)
       val msg: String = "NDCG_overall at " + k + " = " + value
       println(msg)
-      str.append(msg + "\n")
     })
 
     (minK to maxK).foreach(k => {
@@ -144,7 +149,6 @@ object Main extends App {
 
       val msg: String = "Precision_overall at " + k + " = " + value
       println(msg)
-      str.append(msg + "\n")
     })
   }
 
@@ -182,7 +186,7 @@ object Main extends App {
     implicitFeedback.setRequired(false)
     options.addOption(implicitFeedback)
 
-    val checkpointDir = new org.apache.commons.cli.Option("c","checkpointDir",true,"specify the checkpoint dir for spark" )
+    val checkpointDir = new org.apache.commons.cli.Option("c","checkpointDir",true,"specify the checkpoint directory for spark" )
     checkpointDir.setRequired(false)
     options.addOption(checkpointDir)
 
@@ -199,6 +203,10 @@ object Main extends App {
     k.setRequired(false)
     k.setArgs(2)
     options.addOption(k)
+    val seed = new org.apache.commons.cli.Option("s","seed", true, "seed used in the model generation")
+    seed.setRequired(false)
+    seed.setArgs(2)
+    options.addOption(seed)
 
     import org.apache.commons.cli.HelpFormatter
     val parser = new org.apache.commons.cli.BasicParser()
